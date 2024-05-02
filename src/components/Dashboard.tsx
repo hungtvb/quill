@@ -8,6 +8,7 @@ import Skeleton from 'react-loading-skeleton'
 import Link from 'next/link'
 import {format} from 'date-fns'
 import { Button } from './ui/button'
+import { toast } from './ui/use-toast'
 
 const Dashboard = () => {
 
@@ -17,13 +18,25 @@ const Dashboard = () => {
   const {mutate: deleteFile} = trpc.deleteFile.useMutation({
     onSuccess: () => {
       utils.getUserFiles.invalidate()
+      toast({
+        title: "Success",
+        description: "Your file is deleted",
+        variant: "success"
+      })
     },
     onMutate({id}) {
       setDeletingFile(id)
     },
     onSettled() {
       setDeletingFile(null)
-    }
+    },
+    onError() {
+      toast({
+        title: "Error",
+        description: "Fail to delete file, please try again!",
+        variant: "destructive"
+      })
+    },
   })
 
   return (

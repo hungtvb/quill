@@ -4,15 +4,92 @@ import { useState } from "react"
 import { Dialog, DialogContent, DialogTrigger } from "./ui/dialog";
 import { Button } from "./ui/button";
 import Dropzone from 'react-dropzone'
-import { Cloud, File } from "lucide-react";
+import { Cloud, Loader } from "lucide-react";
+import { useToast } from "./ui/use-toast";
+import { BsFilePdf } from "react-icons/bs";
+import { Progress } from "./ui/progress";
+import { useUploadThing } from "@/lib/uploadthing";
+import { trpc } from "@/app/_trpc/client";
+import { useRouter } from 'next/navigation'
 
 const UploadButton = () => {
-
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState<boolean>(false);
+  const {toast} = useToast();
 
   const UploadDropzone = () => {
+
+    const [loading, setLoading] = useState<boolean>(false);
+    const [uploadProgress, setUploadProgress] = useState<number>(0);
+    const {startUpload} = useUploadThing("pdfUploader");
+
+    const {mutate: startPolling} = trpc.getFile.useMutation({
+        onSuccess: (file) => {
+           return router.push(`/dashboard/${file.id}`) 
+        },
+        retry: true,
+        retryDelay: 500
+    })
+
+    const uploadProgressUpdate = () => {
+        setUploadProgress(0);
+
+        const interval = setInterval(() => {
+            setUploadProgress((prev) => {
+                if(prev >= 90){
+                    clearInterval(interval);
+                    return prev;
+                }
+
+                return prev + 5;
+            })
+        }, 500)
+
+        return interval;
+    }
+
     return (
-        <Dropzone multiple={false}>
+        <Dropzone multiple={false}
+            maxFiles={1}
+            maxSize={4194304}
+            accept={{
+                "application/pdf": [".pdf"]
+            }}
+            onDropAccepted={ async (acceptFiles) => {
+                setLoading(true);
+                const interval = uploadProgressUpdate();
+                const res = await startUpload(acceptFiles)
+                
+                if(!res) {
+                    return toast({
+                        title: "Error",
+                        description: "Something wrong with upload file",
+                        variant: "destructive"
+                    })
+                }
+                const [fileResponse] = res
+                const key = fileResponse?.key
+
+                if (!key) {
+                    return toast({
+                        title: "Error",
+                        description: "Something wrong with upload file",
+                        variant: "destructive"
+                    })
+                }
+
+                setUploadProgress(100)
+                clearInterval(interval);
+
+                startPolling({key});
+            }}
+            onDropRejected={() => {
+                toast({
+                    title: "Error",
+                    description: "Please upload PDF file with max size is 4MB",
+                    variant: "destructive"
+                })
+            }}>
             {({getRootProps, getInputProps, acceptedFiles}) => (
                 <div {...getRootProps()} className="border h-64 m-4 border-dashed border-gray-300 rounded-md">
                     <div className="flex items-center justify-center h-full w-full">
@@ -29,12 +106,22 @@ const UploadButton = () => {
                             {acceptedFiles && acceptedFiles[0] ? (
                                 <div className="max-w-xs bg-white flex items-center rounded-md overflow-hidden outline outline-[1px] outline-zinc-200 divide-x divide-zinc-200">
                                     <div className="px-3 py-2 h-full grid place-items-center">
-                                        <File className="h-4 w-4 text-blue-400"/>
+                                        <BsFilePdf className="h-4 w-4 text-red-500"/>
                                     </div>
                                     <div className="px-3 py-2 h-full text-sm truncate">{acceptedFiles[0].name}</div>
                                 </div>
                             ) : null}
+                            {loading ? (<div className="w-full mt-4 max-w-xs mx-auto">
+                                <Progress indicatorColor={uploadProgress === 100 ? 'bg-green-500' : ''} max={100} value={uploadProgress} className="h-1 w-full bg-zinc-300" />
+                                {uploadProgress === 100 ? (
+                                    <div className="flex gap-2 items-center justify-center text-sm text-zinc-700 text-center pt-2">
+                                        <Loader className="w-3 h-3 animate-spin"/>
+                                        Redirecting...
+                                    </div>
+                                ) : null}
+                            </div>) : null}
                         </label>
+                        <input type="hidden" name="dropzone-file" {...getInputProps()}/>
                     </div>
                 </div>
             )}

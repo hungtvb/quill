@@ -3,6 +3,10 @@ import { privateProcedure, publicProcedure, router } from './trpc';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
 import {z} from 'zod'
+import axios from 'axios'
+import { UTApi } from "uploadthing/server";
+
+const utapi = new UTApi;
  
 export const appRouter = router({
     authCallback: publicProcedure.query(async () => {
@@ -39,6 +43,22 @@ export const appRouter = router({
             }
         })
     }),
+    getFile: privateProcedure.input(z.object({key: z.string()})).mutation( async ({ctx, input}) => {
+        const {userId} = ctx;
+        console.log("Get File ", input.key)
+        const file = await db.file.findFirst({
+            where: {
+                key: input.key,
+                userId
+            }
+        })
+
+        if(!file) {
+            throw new TRPCError({code: "NOT_FOUND"});
+        }
+        return file
+
+    }),
     deleteFile: privateProcedure.input(z.object({id: z.string()})).mutation(async ({ctx, input}) => {
         const {userId} = ctx;
 
@@ -50,6 +70,11 @@ export const appRouter = router({
         })
 
         if(!file) throw new TRPCError({code: "NOT_FOUND"});
+        
+        const deleteFromUT = await utapi.deleteFiles(file.key);
+        if (!deleteFromUT.success) {
+            throw new TRPCError({code: "INTERNAL_SERVER_ERROR"});
+        } 
 
         await db.file.delete({
             where: {
